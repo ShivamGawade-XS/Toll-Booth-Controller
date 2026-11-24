@@ -22,3 +22,12 @@ toll-booth-controller-verilog/
 ├── toll_booth_tb.v     # Testbench with 3 test scenarios
 ├── images/             # (Optional) Add your waveform & transcript screenshots here
 └── README.md           # Project documentation
+
+
+### Simulation Output
+
+#### Waveform
+![ModelSim Simulation Waveform](images/waveform.png)
+
+#### Transcript Log
+![ModelSim Transcript Output](images/transcript.png)
