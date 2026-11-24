@@ -1,0 +1,14 @@
+# ModelSim / QuestaSim generated files
+work/
+transcript
+*.wlf
+*.mpf
+*.mti
+*.cr.mti
+*.vstf
+*.log
+*.vcd
+
+# OS files
+.DS_Store
+Thumbs.db
