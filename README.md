@@ -1,148 +1,166 @@
 # Toll Booth Controller
 
-A Verilog HDL toll booth controller using a 3-state Moore finite state machine
-(FSM). It detects one vehicle at a time, waits for payment before opening the
-gate, and counts a vehicle only after a paid vehicle passes.
+<p align="center">
+  <a href="https://www.intel.com/content/www/us/en/software/programmable/quartus-prime/download.html"><img src="https://img.shields.io/badge/HDL-Verilog-blue?style=for-the-badge" alt="Verilog HDL"></a>
+  <a href="https://www.intel.com/content/www/us/en/products/details/fpga/development-tools/quartus-prime.html"><img src="https://img.shields.io/badge/Simulator-ModelSim-orange?style=for-the-badge" alt="ModelSim"></a>
+  <a href="https://github.com/ShivamGawade-XS/Toll-Booth-Controller/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License"></a>
+</p>
+
+A Verilog HDL toll booth controller implemented with a 3-state **Moore finite state machine (FSM)**. It detects a vehicle, waits for payment, opens the gate, and increments an 8-bit vehicle counter only after a paid vehicle completes passage.
+
+---
+
+## Table of Contents
+
+- [Features](#features)
+- [How It Works](#how-it-works)
+- [FSM States](#fsm-states)
+- [State Diagram](#state-diagram)
+- [Inputs and Outputs](#inputs-and-outputs)
+- [Project Structure](#project-structure)
+- [Run the Simulation](#run-the-simulation)
+- [Simulation Results](#simulation-results)
+- [Test Coverage](#test-coverage)
+- [Limitations and Future Improvements](#limitations-and-future-improvements)
+
+---
 
 ## Features
 
-- **3-state Moore FSM:** `IDLE`, `WAIT_PAY`, and `GATE_OPEN`.
-- **Payment-controlled gate:** the gate opens and the green LED turns on only
-  after payment is confirmed.
-- **Unpaid vehicle handling:** an unpaid vehicle can leave without opening the
-  gate or incrementing the counter.
-- **8-bit vehicle counter:** counts up to 255 paid vehicles that pass.
-- **Asynchronous active-high reset:** resets the FSM to `IDLE` and clears the
-  counter without waiting for a clock edge.
+- 3-state Moore FSM: `IDLE`, `WAIT_PAY`, and `GATE_OPEN`
+- Payment-controlled gate operation
+- Unpaid vehicle handling without counting
+- 8-bit counter for passed paid vehicles
+- Asynchronous active-high reset
+- ModelSim-compatible Verilog-2001 design and testbench
+- Automated assertions for reset, payment, LEDs, and vehicle count
 
-## Project Folder Structure
+---
 
-```text
-Toll-Booth-Controller-main/
-├── toll_booth.v
-├── toll_booth_tb.v
-├── run.do
-├── README.md
-└── .gitignore
+## How It Works
+
+1. The controller remains in `IDLE` while no vehicle is detected.
+2. When `car_detect` becomes `1`, it enters `WAIT_PAY` and keeps the gate closed.
+3. If the vehicle leaves before payment, the FSM returns to `IDLE` and the count does not increase.
+4. When `paid` becomes `1`, the FSM enters `GATE_OPEN` and activates the gate and green LED.
+5. When the vehicle leaves while in `GATE_OPEN`, the gate closes and `car_count` increments once.
+
+---
+
+## FSM States
+
+| State | Encoding | Gate | Red LED | Green LED | Description |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| `IDLE` | `2'b00` | 0 | 1 | 0 | Waiting for a vehicle |
+| `WAIT_PAY` | `2'b01` | 0 | 1 | 0 | Vehicle detected; payment pending |
+| `GATE_OPEN` | `2'b10` | 1 | 0 | 1 | Payment confirmed; vehicle passing |
+
+### State Transitions
+
+| Current State | Condition | Next State | Action |
+| :--- | :--- | :--- | :--- |
+| `IDLE` | `car_detect == 0` | `IDLE` | Continue waiting |
+| `IDLE` | `car_detect == 1` | `WAIT_PAY` | Wait for payment |
+| `WAIT_PAY` | `car_detect == 1 && paid == 0` | `WAIT_PAY` | Keep gate closed |
+| `WAIT_PAY` | `car_detect == 0` | `IDLE` | Unpaid vehicle leaves; no count |
+| `WAIT_PAY` | `car_detect == 1 && paid == 1` | `GATE_OPEN` | Open gate |
+| `GATE_OPEN` | `car_detect == 1` | `GATE_OPEN` | Keep gate open |
+| `GATE_OPEN` | `car_detect == 0` | `IDLE` | Close gate and increment count |
+
+---
+
+## State Diagram
+
+```mermaid
+stateDiagram-v2
+    [*] --> IDLE
+
+    IDLE --> WAIT_PAY : car_detect = 1
+    IDLE --> IDLE : car_detect = 0
+
+    WAIT_PAY --> GATE_OPEN : car_detect = 1 && paid = 1
+    WAIT_PAY --> IDLE : car_detect = 0
+    WAIT_PAY --> WAIT_PAY : car_detect = 1 && paid = 0
+
+    GATE_OPEN --> IDLE : car_detect = 0 / count++
+    GATE_OPEN --> GATE_OPEN : car_detect = 1
 ```
+
+---
 
 ## Inputs and Outputs
 
 | Signal | Direction | Width | Description |
 | :--- | :---: | :---: | :--- |
-| `clk` | Input | 1 bit | Rising-edge-triggered system clock |
+| `clk` | Input | 1 bit | Rising-edge system clock |
 | `reset` | Input | 1 bit | Asynchronous active-high reset |
-| `car_detect` | Input | 1 bit | `1` when a vehicle is at the gate |
+| `car_detect` | Input | 1 bit | `1` while a vehicle is at the gate |
 | `paid` | Input | 1 bit | `1` when payment is confirmed |
 | `gate_open` | Output | 1 bit | `1` when the gate is open |
 | `red_led` | Output | 1 bit | Stop indicator |
 | `green_led` | Output | 1 bit | Go indicator |
 | `car_count` | Output | 8 bits | Number of paid vehicles that passed |
 
-## Architecture, FSM, and State Transitions
+> The 8-bit counter wraps from `255` back to `0` when it overflows.
 
-The controller uses a two-bit state register with separate next-state logic,
-Moore output logic, and an 8-bit vehicle counter. The state register and
-counter use the same asynchronous active-high reset.
+---
 
-| State | Encoding |
-| :--- | :---: |
-| `IDLE` | `2'b00` |
-| `WAIT_PAY` | `2'b01` |
-| `GATE_OPEN` | `2'b10` |
+## Project Structure
 
-| Current state | Condition | Next state | Result |
-| :--- | :--- | :--- | :--- |
-| `IDLE` | `car_detect == 0` | `IDLE` | Wait for a vehicle |
-| `IDLE` | `car_detect == 1` | `WAIT_PAY` | Wait for payment |
-| `WAIT_PAY` | `car_detect == 1 && paid == 0` | `WAIT_PAY` | Keep gate closed |
-| `WAIT_PAY` | `car_detect == 0` | `IDLE` | Unpaid vehicle leaves; do not count |
-| `WAIT_PAY` | `car_detect == 1 && paid == 1` | `GATE_OPEN` | Open the gate |
-| `GATE_OPEN` | `car_detect == 1` | `GATE_OPEN` | Keep gate open as vehicle passes |
-| `GATE_OPEN` | `car_detect == 0` | `IDLE` | Close gate and increment count once |
-
-The outputs are Moore outputs and depend only on the current state:
-
-| State | `gate_open` | `red_led` | `green_led` |
-| :--- | :---: | :---: | :---: |
-| `IDLE` | 0 | 1 | 0 |
-| `WAIT_PAY` | 0 | 1 | 0 |
-| `GATE_OPEN` | 1 | 0 | 1 |
-
-## Running the Project in ModelSim SE Plus 5.7g on Windows
-
-### Software requirements
-
-- Windows
-- ModelSim SE Plus 5.7g (Compiler 2003.10)
-- The five project files listed above
-
-The design and testbench use Verilog-2001 syntax and require no additional
-packages or external tools.
-
-### 1. Open ModelSim and set the project directory
-
-Open ModelSim SE Plus 5.7g from the Windows Start menu or its installed
-shortcut. In the Transcript window, change to the directory containing the
-project files. For the example Windows installation, enter:
-
-```tcl
-cd C:/Users/student/Desktop/Toll-Booth-Controller-main
+```text
+Toll-Booth-Controller/
+├── images/
+│   ├── transcript.png
+│   └── waveform.png
+├── .gitignore
+├── README.md
+├── run.do
+├── toll_booth.v
+└── toll_booth_tb.v
 ```
 
-Alternatively, use **File → Change Directory** and select that folder.
-Confirm that the Transcript's current directory is the project folder before
-compiling or running `run.do`.
+| File | Purpose |
+| :--- | :--- |
+| `toll_booth.v` | FSM, output logic, and vehicle counter |
+| `toll_booth_tb.v` | Clock, reset, stimulus, and automated checks |
+| `run.do` | ModelSim build and simulation script |
+| `images/transcript.png` | Transcript result screenshot |
+| `images/waveform.png` | ModelSim waveform screenshot |
 
-### 2. Compile and start simulation manually
+---
 
-In the Transcript window, create the `work` library if it does not already
-exist, then compile both Verilog files and start the testbench:
+## Run the Simulation
+
+### Requirements
+
+- Windows
+- ModelSim SE Plus 5.7g or a compatible Verilog simulator
+
+### Automated Run
+
+Open ModelSim, change to the project directory, and enter:
+
+```tcl
+cd C:/path/to/Toll-Booth-Controller
+do run.do
+```
+
+The script creates a `work` library if needed, compiles both Verilog files, launches the testbench, adds all signals to the Wave window, and runs until `$finish`.
+
+### Manual Run
 
 ```tcl
 vlib work
 vlog -work work toll_booth.v
 vlog -work work toll_booth_tb.v
 vsim work.toll_booth_tb
-```
-
-If `work` already exists, skip `vlib work`. Both `vlog` commands should finish
-without errors before starting `vsim`.
-
-### 3. Add signals and run
-
-In the Transcript window, add the testbench and DUT signals recursively to the
-Wave window, then run until the testbench calls `$finish`:
-
-```tcl
 add wave -r sim:/toll_booth_tb/*
 run -all
 ```
 
-The recursive waveform command includes the testbench signals and the
-controller's internal signals.
+Use **Zoom Full** from the Wave window toolbar or menu to fit the complete waveform.
 
-### 4. Zoom the waveform
-
-Use the Wave window's **Zoom Full** toolbar button or its **View → Zoom → Zoom
-Full** menu item to fit the complete simulation in the window. This GUI action
-is used instead of the unsupported `wave zoom full` Transcript command.
-
-### 5. Run the entire flow with `run.do`
-
-With the Transcript's current directory set to the project folder, enter:
-
-```tcl
-do run.do
-```
-
-The script creates `work` only if needed, compiles the design and testbench,
-starts `work.toll_booth_tb`, adds its signals recursively to the Wave window,
-and runs to `$finish`.
-
-### Expected Transcript output
-
-The testbench prints these success messages when its checks pass:
+### Expected Transcript
 
 ```text
 ASYNCHRONOUS RESET CHECK PASSED
@@ -152,52 +170,65 @@ TEST 3 PASSED
 ALL TESTS PASSED: car_count=2, gate_open=0, red_led=1, green_led=0
 ```
 
-ModelSim may also print its normal `$finish` notice. On a failed check, the
-testbench prints a `FAIL:` message identifying the check and ends simulation.
+---
 
-### Expected waveform behavior
+## Simulation Results
 
-- Reset is asserted between clock edges; the counter clears and the outputs
-  show the `IDLE` values: gate closed, red on, green off.
-- For the first vehicle, the gate remains closed in `WAIT_PAY`. After payment,
-  the gate opens and green turns on. When the vehicle leaves, the gate closes,
-  red turns on, and `car_count` becomes 1.
-- The unpaid vehicle remains in `WAIT_PAY` with the gate closed. On departure,
-  the FSM returns to `IDLE` and `car_count` remains 1.
-- The second paid vehicle opens the gate, then closes it on departure;
-  `car_count` becomes 2.
-- At the end of the testbench, `gate_open=0`, `red_led=1`, `green_led=0`, and
-  `car_count=2`.
+### ModelSim Transcript
 
-### Common errors and solutions
+<p align="center">
+  <img src="images/transcript.png" alt="ModelSim transcript showing all tests passed" width="850">
+</p>
 
-| Error or symptom | Solution |
+The transcript confirms that asynchronous reset, all three test scenarios, and the final state of the controller pass successfully.
+
+### Simulation Waveform
+
+<p align="center">
+  <img src="images/waveform.png" alt="ModelSim waveform for the toll booth controller" width="850">
+</p>
+
+The waveform demonstrates the reset pulse, unpaid-vehicle departure, paid gate operation, and counter increments from `0` to `2`.
+
+---
+
+## Test Coverage
+
+| Scenario | Expected Result |
 | :--- | :--- |
-| `could not open do file` or source files cannot be found | Change the Transcript working directory to the project folder, then run `do run.do` again. |
-| `work` library does not exist | Run `vlib work` once from the project folder. The `run.do` script also creates it when absent. |
-| `toll_booth` or `toll_booth_tb` cannot be found | Compile `toll_booth.v` and `toll_booth_tb.v` with the two `vlog` commands before `vsim`. |
-| Wave window is empty | Run `add wave -r sim:/toll_booth_tb/*` after starting the simulation. |
-| Waveform is hard to read | Use the Wave window's **Zoom Full** toolbar button or **View → Zoom → Zoom Full**. |
-| A `FAIL:` message appears | Read the specific check in the Transcript and inspect the corresponding signals around that time in the Wave window. |
+| Asynchronous reset | Count = `0`; state = `IDLE`; red LED = `1` |
+| First paid vehicle | Gate opens once payment is asserted; count becomes `1` after departure |
+| Unpaid vehicle | Gate remains closed; count remains `1` |
+| Second paid vehicle | Gate opens and count becomes `2` after departure |
+| Final state | Gate = `0`; red LED = `1`; green LED = `0`; count = `2` |
 
-## Testbench Scenarios
+---
 
-The testbench uses a 10 ns clock period and automatically checks asynchronous
-reset, the LED values in each FSM state, payment gating, unpaid departures,
-and the vehicle counter:
+## Limitations and Future Improvements
 
-| Scenario | Expected `car_count` |
-| :--- | :---: |
-| Initial reset | 0 |
-| First paid vehicle passes | 1 |
-| Unpaid vehicle leaves | 1 |
-| Second paid vehicle passes | 2 |
+### Current Limitations
 
-## Limitations
+- Supports one vehicle and one toll lane at a time
+- No vehicle-type or fee calculation
+- No payment timeout
+- Counter wraps after `255`
+- No 7-segment or external display output
 
-- The 8-bit counter wraps from 255 to 0 on overflow.
-- The controller handles one toll lane and one vehicle at a time.
-- Vehicle-type fees, payment timeouts, and display outputs are not implemented.
+### Possible Improvements
 
-Possible future extensions include multi-lane support, vehicle-type fee
-calculation, a payment timeout, and a 7-segment display.
+- Multi-lane toll booth support
+- Vehicle classification and dynamic pricing
+- Payment timeout and cancellation logic
+- 7-segment vehicle counter display
+- FPGA board integration
+- Coverage-driven verification
+
+---
+
+## License
+
+This project is available under the [MIT License](LICENSE).
+
+## Author
+
+[Shivam Gawade](https://github.com/ShivamGawade-XS)
