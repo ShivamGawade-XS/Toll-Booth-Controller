@@ -1,3 +1,5 @@
+`timescale 1ns/1ps
+
 module toll_booth (
     input clk,
     input reset,            // 1 = reset everything

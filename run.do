@@ -1,6 +1,9 @@
-vlib work
-vlog toll_booth.v toll_booth_tb.v
+if {![file isdirectory work]} {
+    vlib work
+}
+
+vlog -work work toll_booth.v
+vlog -work work toll_booth_tb.v
 vsim work.toll_booth_tb
-add wave -r /*
+add wave -r sim:/toll_booth_tb/*
 run -all
-wave zoom full
